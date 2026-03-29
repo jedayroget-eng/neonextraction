@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Extraction - Sistema de Banca e Risco</title>
+    <style>
+        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #000; font-family: 'Courier New', Courier, monospace; overflow: hidden; color: #fff; }
+        .tablet-frame { position: relative; width: 90vw; height: 85vh; border: 15px solid #111; border-radius: 20px; background: #02020a; box-shadow: 0 0 50px rgba(0, 255, 255, 0.2); display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* HUD Superior */
+        .top-hud { display: flex; justify-content: space-between; align-items: center; padding: 10px 30px; background: #0a0a1a; border-bottom: 2px solid #00ffff; }
+        .game-title { color: #ff00ff; text-shadow: 0 0 10px #ff00ff; margin: 0; font-size: 1.2em; }
+        .balance-box { background: #111; padding: 10px 20px; border-radius: 10px; border: 1px solid #00ffaa; color: #00ffaa; font-weight: bold; font-size: 1.1em; }
+
+        /* Área de Jogo */
+        .game-area { flex-grow: 1; position: relative; width: 100%; background: radial-gradient(circle at center, #050515 0%, #000 100%); }
+        .grid-bg { position: absolute; width: 100%; height: 100%; background-image: linear-gradient(rgba(0, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 255, 0.05) 1px, transparent 1px); background-size: 50px 50px; }
+        .big-multiplier { position: absolute; width: 100%; top: 35%; text-align: center; font-size: 5em; font-weight: bold; text-shadow: 0 0 20px #00ffff; z-index: 5; }
+        #trajectory-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 6; }
+        .drone { position: absolute; width: 40px; height: 30px; background: #00ffff; clip-path: polygon(100% 50%, 0 0, 25% 50%, 0 100%); box-shadow: 0 0 20px #00ffff; z-index: 10; display: none; }
+
+        /* Painel de Controle */
+        .controls-area { height: 160px; background: #050510; border-top: 2px solid #ff00ff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; padding: 10px; }
+        .bet-input-area { display: flex; gap: 10px; align-items: center; margin-bottom: 5px; }
+        .bet-input { background: #111; border: 1px solid #ff00ff; color: #fff; padding: 8px; border-radius: 5px; width: 80px; text-align: center; font-size: 1em; }
+        
+        .risk-buttons { display: flex; gap: 15px; }
+        .btn { padding: 15px 25px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; text-transform: uppercase; transition: 0.2s; font-size: 0.9em; min-width: 140px; }
+        .btn-low { background: #00ffaa; color: #000; box-shadow: 0 0 10px #00ffaa; }
+        .btn-med { background: #ffff00; color: #000; box-shadow: 0 0 10px #ffff00; }
+        .btn-high { background: #ff0055; color: #fff; box-shadow: 0 0 10px #ff0055; }
+        
+        .btn-retirar { position: absolute; bottom: 20px; background: #fff; color: #000; width: 250px; height: 70px; font-size: 1.5em; border-radius: 10px; display: none; z-index: 100; box-shadow: 0 0 30px #fff; }
+        
+        .status-msg { position: absolute; width: 100%; top: 60%; text-align: center; font-weight: bold; font-size: 1.2em; z-index: 8; }
+        
+        .btn:disabled, .btn-disabled { opacity: 0.3; cursor: not-allowed; filter: grayscale(1); }
+    </style>
+</head>
+<body>
+
+    <div class="tablet-frame">
+        <div class="top-hud">
+            <h1 class="game-title">NEON EXTRACTION</h1>
+            <div class="balance-box" id="balance-display">BANCA: R$ 1000.00</div>
+        </div>
+
+        <div class="game-area" id="game-area">
+            <div class="grid-bg"></div>
+            <div class="big-multiplier" id="mult-display">x1.00</div>
+            <div class="status-msg" id="status-text"></div>
+            <canvas id="trajectory-canvas"></canvas>
+            <div class="drone" id="drone"></div>
+            <button class="btn btn-retirar" id="btn-retirar">EJECT <br><small id="btn-cashout-val">R$ 0.00</small></button>
+        </div>
+
+        <div class="controls-area" id="controls-panel">
+            <div class="bet-input-area">
+                VALOR DA APOSTA: R$ <input type="number" id="bet-amount" class="bet-input" value="10.00" step="1.00">
+            </div>
+            <div class="risk-buttons">
+                <button class="btn btn-low" onclick="iniciarJogo(0.05, 1)">BAIXO RISCO</button>
+                <button class="btn btn-med" onclick="iniciarJogo(0.12, 2)">MÉDIO RISCO</button>
+                <button class="btn btn-high" onclick="iniciarJogo(0.35, 3)">ALTO RISCO</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('trajectory-canvas');
+        const ctx = canvas.getContext('2d');
+        const drone = document.getElementById('drone');
+        const balanceDisplay = document.getElementById('balance-display');
+        const multDisplay = document.getElementById('mult-display');
+        const statusText = document.getElementById('status-text');
+        const btnRetirar = document.getElementById('btn-retirar');
+        const btnCashoutVal = document.getElementById('btn-cashout-val');
+        const inputBet = document.getElementById('bet-amount');
+        const controlsPanel = document.getElementById('controls-panel');
+        const gameArea = document.getElementById('game-area');
+
+        let balance = 1000.00;
+        let isPlaying = false;
+        let currentMult = 1.00;
+        let crashPoint = 1.00;
+        let betValue = 0;
+        let speedFactor = 0.1;
+        let startTime;
+        let animationId;
+
+        function resize() {
+            canvas.width = gameArea.clientWidth;
+            canvas.height = gameArea.clientHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function updateBalanceUI() {
+            balanceDisplay.textContent = `BANCA: R$ ${balance.toFixed(2)}`;
+        }
+
+        function gerarCrash() {
+            // Regra universal de crash para médio/baixo/alto
+            const r = Math.random();
+            if (r < 0.03) return 1.00; // 3% de chance de crash imediato
+            let ponto = 0.98 / Math.random();
+            return Math.max(1.01, Math.min(ponto, 500));
+        }
+
+        function iniciarJogo(speed, riskType) {
+            betValue = parseFloat(inputBet.value);
+            if (betValue > balance || betValue <= 0) {
+                alert("Saldo insuficiente ou aposta inválida!");
+                return;
+            }
+
+            // DEDUZ O VALOR DA BANCA
+            balance -= betValue;
+            updateBalanceUI();
+
+            // Configurações
+            isPlaying = true;
+            speedFactor = speed;
+            currentMult = 1.00;
+            crashPoint = gerarCrash();
+            startTime = performance.now();
+
+            // UI
+            controlsPanel.classList.add('btn-disabled');
+            btnRetirar.style.display = 'block';
+            statusText.textContent = "";
+            multDisplay.style.color = "#fff";
+            drone.style.display = 'block';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            animationId = requestAnimationFrame(loop);
+        }
+
+        function loop(now) {
+            if (!isPlaying) return;
+            let elapsed = (now - startTime) / 1000;
+
+            // Multiplicador cresce com base no speedFactor (Risco)
+            currentMult = 1.00 + (Math.pow(elapsed, 1.4) * speedFactor);
+
+            if (currentMult >= crashPoint) {
+                currentMult = crashPoint;
+                finalizar(false);
+                return;
+            }
+
+            multDisplay.textContent = `x${currentMult.toFixed(2)}`;
+            btnCashoutVal.textContent = `R$ ${(betValue * currentMult).toFixed(2)}`;
+
+            renderGrafico(elapsed, currentMult);
+            animationId = requestAnimationFrame(loop);
+        }
+
+        function renderGrafico(t, m) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let startX = 60, startY = canvas.height - 60;
+            let px = startX + (t * 40);
+            let py = startY - ((m - 1) * 60);
+
+            // Ajuste de câmera simples
+            if (px > canvas.width - 100) px = canvas.width - 100;
+            if (py < 100) py = 100;
+
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.quadraticCurveTo(startX + (px - startX) * 0.5, startY, px, py);
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 5;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00ffff';
+            ctx.stroke();
+
+            drone.style.left = `${px - 20}px`;
+            drone.style.top = `${py - 15}px`;
+            let angle = -Math.atan2((startY - py), (px - startX)) * 180 / Math.PI + 45;
+            drone.style.transform = `rotate(${angle}deg)`;
+        }
+
+        btnRetirar.onclick = () => {
+            if (isPlaying) finalizar(true);
+        };
+
+        function finalizar(ganhou) {
+            isPlaying = false;
+            cancelAnimationFrame(animationId);
+            btnRetirar.style.display = 'none';
+            
+            if (ganhou) {
+                let lucro = betValue * currentMult;
+                balance += lucro; // SOMA O GANHO À BANCA
+                multDisplay.style.color = "#00ffaa";
+                statusText.textContent = `SUCESSO! VOCÊ EXTRAIU R$ ${lucro.toFixed(2)}`;
+                statusText.style.color = "#00ffaa";
+            } else {
+                multDisplay.style.color = "#ff0000";
+                statusText.textContent = `FIREWALL DETECTADO! PERDEU R$ ${betValue.toFixed(2)}`;
+                statusText.style.color = "#ff0000";
+                drone.style.display = 'none';
+            }
+
+            updateBalanceUI();
+
+            setTimeout(() => {
+                controlsPanel.classList.remove('btn-disabled');
+                multDisplay.textContent = "x1.00";
+                statusText.textContent = "ESCOLHA O NÍVEL DE RISCO";
+                statusText.style.color = "#ff00ff";
+            }, 3000);
+        }
+
+        updateBalanceUI();
+    </script>
+</body>
+</html>
