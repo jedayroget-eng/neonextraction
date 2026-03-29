@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon Extraction - Pro Version</title>
+    <style>
+        :root {
+            --neon-cyan: #00f2ff;
+            --neon-magenta: #ff00ea;
+            --neon-green: #00ffaa;
+            --bg-dark: #02020a;
+            --panel-bg: rgba(10, 10, 25, 0.9);
+        }
+
+        body { margin: 0; background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+
+        .tablet-container {
+            position: relative; width: 98vw; height: 95vh;
+            background: var(--bg-dark);
+            border: 10px solid #1a1a1a; border-radius: 20px;
+            display: grid;
+            grid-template-columns: 280px 1fr; /* Coluna esquerda para jogadores */
+            grid-template-rows: 50px 1fr 160px; /* Topo, Jogo, Controles */
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0, 242, 255, 0.1);
+        }
+
+        /* Histórico de Velas Superior */
+        .history-bar {
+            grid-column: 2; background: #050510;
+            display: flex; align-items: center; gap: 10px; padding: 0 20px;
+            border-bottom: 1px solid #1a1a2a; overflow-x: hidden;
+        }
+        .history-item {
+            padding: 2px 10px; border-radius: 10px; font-size: 0.8em; font-weight: bold;
+            background: rgba(255,255,255,0.05); border: 1px solid #333;
+        }
+
+        /* Painel de Jogadores (Lateral) */
+        .players-panel {
+            grid-row: 1 / 4; background: var(--panel-bg);
+            border-right: 1px solid #1a1a2a; display: flex; flex-direction: column;
+        }
+        .panel-header { padding: 15px; font-size: 0.9em; border-bottom: 1px solid #1a1a2a; color: var(--neon-cyan); }
+        .players-list { flex-grow: 1; overflow-y: auto; padding: 10px; font-size: 0.75em; }
+        .player-row { 
+            display: flex; justify-content: space-between; padding: 8px; 
+            border-bottom: 1px solid rgba(255,255,255,0.05); transition: 0.3s;
+        }
+        .player-win { color: var(--neon-green); background: rgba(0, 255, 170, 0.05); }
+
+        /* Área de Voo */
+        .game-viewport {
+            position: relative; background: radial-gradient(circle at center, #0a0a25 0%, #02020a 100%);
+            overflow: hidden;
+        }
+        .grid-3d {
+            position: absolute; width: 200%; height: 200%; top: -50%; left: -50%;
+            background-image: linear-gradient(rgba(0, 242, 255, 0.05) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(0, 242, 255, 0.05) 1px, transparent 1px);
+            background-size: 50px 50px; transform: rotateX(60deg); animation: gridMove 2s linear infinite;
+        }
+        @keyframes gridMove { from { background-position: 0 0; } to { background-position: 0 50px; } }
+
+        .multiplier-display {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; z-index: 10;
+        }
+        .multiplier-value { font-size: 6em; font-weight: 900; margin: 0; text-shadow: 0 0 30px var(--neon-cyan); }
+
+        #drone-unit { position: absolute; width: 50px; height: 40px; z-index: 20; display: none; }
+
+        /* Controles */
+        .control-deck {
+            grid-column: 2; background: #05050f; border-top: 2px solid #1a1a2a;
+            display: flex; justify-content: space-around; align-items: center;
+        }
+        .btn-action {
+            padding: 15px 25px; border: 1px solid transparent; border-radius: 10px;
+            cursor: pointer; font-weight: bold; transition: 0.3s; min-width: 140px;
+        }
+        .btn-low { border-color: var(--neon-green); color: var(--neon-green); background: rgba(0,255,170,0.1); }
+        .btn-med { border-color: #ffff00; color: #ffff00; background: rgba(255,255,0,0.1); }
+        .btn-high { border-color: var(--neon-magenta); color: var(--neon-magenta); background: rgba(255,0,234,0.1); }
+
+        .btn-eject {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 280px; height: 70px; background: var(--neon-magenta); color: #fff;
+            border: none; border-radius: 35px; font-size: 1.5em; font-weight: 900;
+            box-shadow: 0 0 30px var(--neon-magenta); display: none; z-index: 100; cursor: pointer;
+        }
+
+        .crash-overlay {
+            position: absolute; inset: 0; background: rgba(255, 0, 0, 0.3);
+            display: none; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px);
+        }
+
+        canvas { position: absolute; top: 0; left: 0; }
+    </style>
+</head>
+<body>
+
+    <div class="tablet-container">
+        <div class="players-panel">
+            <div class="panel-header">LIVE EXTRACTIONS <span id="player-count" style="float:right">...</span></div>
+            <div class="players-list" id="players-list">
+                </div>
+            <div style="padding: 15px; border-top: 1px solid #1a1a2a;">
+                <div style="font-size: 0.8em; color: var(--neon-green)">BANCA: <span id="user-balance">R$ 1000.00</span></div>
+            </div>
+        </div>
+
+        <div class="history-bar" id="history-bar">
+            </div>
+
+        <div class="game-viewport" id="viewport">
+            <div class="grid-3d"></div>
+            <div class="multiplier-display">
+                <h2 class="multiplier-value" id="mult-text">x1.00</h2>
+            </div>
+            <canvas id="trail-canvas"></canvas>
+            <div id="drone-unit">
+                <svg viewBox="0 0 60 50"><path fill="var(--neon-cyan)" d="M30 5 L55 40 L30 32 L5 40 Z" /></svg>
+            </div>
+            <button class="btn-eject" id="btn-eject">EJECT <span id="cashout-preview" style="display:block; font-size: 0.4em;">R$ 0.00</span></button>
+            <div class="crash-overlay" id="crash-screen"><h1 style="color:#fff; font-size: 3em;">FIREWALL BLOCK</h1></div>
+        </div>
+
+        <div class="control-deck" id="ui-deck">
+            <div style="text-align:center">
+                <label style="display:block; font-size: 0.6em; opacity: 0.6;">BET AMOUNT</label>
+                <input type="number" id="bet-input" style="background:#000; color:#fff; border:1px solid #333; padding:10px; width:100px; text-align:center" value="10.00">
+            </div>
+            <div style="display:flex; gap:10px">
+                <button class="btn-action btn-low" onclick="initFlight(0.04)">SAFE</button>
+                <button class="btn-action btn-med" onclick="initFlight(0.12)">STABLE</button>
+                <button class="btn-action btn-high" onclick="initFlight(0.40)">CRITICAL</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('trail-canvas');
+        const ctx = canvas.getContext('2d');
+        const drone = document.getElementById('drone-unit');
+        const multText = document.getElementById('mult-text');
+        const balanceText = document.getElementById('user-balance');
+        const historyBar = document.getElementById('history-bar');
+        const playersList = document.getElementById('players-list');
+        const btnEject = document.getElementById('btn-eject');
+        const crashScreen = document.getElementById('crash-screen');
+        const viewport = document.getElementById('viewport');
+
+        let balance = 1000.00;
+        let isActive = false;
+        let currentMult = 1.00;
+        let targetCrash = 0;
+        let bet = 0;
+        let speed = 0.1;
+        let startT;
+        let anim;
+        let botPlayers = [];
+
+        function resize() {
+            canvas.width = viewport.clientWidth;
+            canvas.height = viewport.clientHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- SISTEMA DE JOGADORES FAKES ---
+        const names = ["Cyber_Punk", "Hacker99", "Neo_Cedro", "DataHunter", "GhostShell", "RootUser", "BitRunner", "Void_"];
+        function generateBots() {
+            playersList.innerHTML = "";
+            botPlayers = [];
+            let count = 10 + Math.floor(Math.random() * 10);
+            document.getElementById('player-count').textContent = count;
+            
+            for(let i=0; i<count; i++) {
+                let p = {
+                    name: names[Math.floor(Math.random()*names.length)] + Math.floor(Math.random()*99),
+                    bet: (Math.random() * 50 + 2).toFixed(2),
+                    target: (1.1 + Math.random() * 4).toFixed(2),
+                    cashedOut: false
+                };
+                botPlayers.push(p);
+                addPlayerRow(p);
+            }
+        }
+
+        function addPlayerRow(p) {
+            let div = document.createElement('div');
+            div.className = 'player-row';
+            div.id = 'p-' + p.name;
+            div.innerHTML = `<span>${p.name}</span> <span>R$ ${p.bet}</span>`;
+            playersList.appendChild(div);
+        }
+
+        function updateBots(current) {
+            botPlayers.forEach(p => {
+                if(!p.cashedOut && current >= p.target) {
+                    p.cashedOut = true;
+                    let row = document.getElementById('p-' + p.name);
+                    if(row) {
+                        row.classList.add('player-win');
+                        row.innerHTML = `<span>${p.name}</span> <span>x${p.target} ✅</span>`;
+                    }
+                }
+            });
+        }
+
+        // --- LÓGICA DO JOGO ---
+        function initFlight(s) {
+            bet = parseFloat(document.getElementById('bet-input').value);
+            if (bet > balance || bet <= 0) return;
+
+            balance -= bet;
+            balanceText.textContent = `R$ ${balance.toFixed(2)}`;
+            generateBots();
+            
+            isActive = true; speed = s; currentMult = 1.00;
+            targetCrash = (Math.random() < 0.03) ? 1.00 : Math.max(1.01, 0.98 / Math.random());
+            startT = performance.now();
+
+            document.getElementById('ui-deck').style.opacity = "0.3";
+            document.getElementById('ui-deck').style.pointerEvents = "none";
+            btnEject.style.display = 'block';
+            drone.style.display = 'block';
+            crashScreen.style.display = 'none';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            loop();
+        }
+
+        function loop() {
+            if (!isActive) return;
+            let elapsed = (performance.now() - startT) / 1000;
+            currentMult = 1.00 + (Math.pow(elapsed, 1.5) * speed);
+
+            if (currentMult >= targetCrash) {
+                currentMult = targetCrash;
+                finish(false);
+                return;
+            }
+
+            multText.textContent = `x${currentMult.toFixed(2)}`;
+            document.getElementById('cashout-preview').textContent = `R$ ${(bet * currentMult).toFixed(2)}`;
+            updateBots(currentMult);
+            draw(elapsed, currentMult);
+            anim = requestAnimationFrame(loop);
+        }
+
+        function draw(t, m) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let x0 = 80, y0 = canvas.height - 80;
+            let px = x0 + (t * 50); let py = y0 - ((m - 1) * 70);
+            if (px > canvas.width - 150) px = canvas.width - 150;
+            if (py < 150) py = 150;
+
+            ctx.beginPath();
+            ctx.moveTo(x0, y0);
+            ctx.quadraticCurveTo(x0 + (px - x0) * 0.4, y0, px, py);
+            ctx.strokeStyle = '#00f2ff'; ctx.lineWidth = 4;
+            ctx.stroke();
+
+            drone.style.left = `${px - 25}px`; drone.style.top = `${py - 20}px`;
+            let angle = -Math.atan2((y0 - py), (px - x0)) * 180 / Math.PI + 45;
+            drone.style.transform = `rotate(${angle}deg)`;
+        }
+
+        btnEject.onclick = () => { if (isActive) finish(true); };
+
+        function finish(win) {
+            isActive = false;
+            cancelAnimationFrame(anim);
+            btnEject.style.display = 'none';
+            document.getElementById('ui-deck').style.opacity = "1";
+            document.getElementById('ui-deck').style.pointerEvents = "all";
+
+            // Adicionar ao histórico
+            let h = document.createElement('div');
+            h.className = 'history-item';
+            h.textContent = currentMult.toFixed(2) + 'x';
+            h.style.color = currentMult >= 2 ? 'var(--neon-magenta)' : '#fff';
+            historyBar.prepend(h);
+
+            if (win) {
+                balance += (bet * currentMult);
+                balanceText.textContent = `R$ ${balance.toFixed(2)}`;
+            } else {
+                crashScreen.style.display = 'flex';
+                drone.style.display = 'none';
+                setTimeout(() => crashScreen.style.display = 'none', 2000);
+            }
+        }
+
+        generateBots(); // Iniciar com bots na lista
+    </script>
+</body>
+</html>
